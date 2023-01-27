@@ -13,7 +13,7 @@ num_class = 150
 #num_class = 171
 #num_class = 2
 
-
+## Borrowed from https://gist.github.com/gpleiss/0b17bc4bd118b49050056cfcd5446c71
 def make_model_diagrams(outputs, labels,  n_bins=10):
     """
     outputs - a torch tensor (size n x num_classes) with the outputs from the final linear layer
