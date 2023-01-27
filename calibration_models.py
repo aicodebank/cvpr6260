@@ -7,7 +7,6 @@ import numpy as np
 import math 
 from typing import Tuple
 from matplotlib import pyplot as plt
-#from reshape_distributions import ReshapedDistribution
 
 #num_class = 19
 num_class = 150
@@ -114,42 +113,7 @@ def initialization(m):
         
     
         
-class ReshapedDistribution(td.Distribution):
-    def __init__(self, base_distribution: td.Distribution, new_event_shape: Tuple[int, ...]):
-        super().__init__(batch_shape=base_distribution.batch_shape, event_shape=new_event_shape, validate_args=False)
-        
-        self.base_distribution = base_distribution
-#        print(td.Distribution.batch_shape)
-#        print(self.base_distribution.arg_constraints())
-        
-        self.new_shape = base_distribution.batch_shape + new_event_shape
-#        self.arg_constraints = self.base_distribution.arg_constraints()
 
-    @property
-    def support(self):
-        return self.base_distribution.support
-
-#    @property
-#    def arg_constraints(self):
-#        return self.base_distribution.arg_constraints()
-#        return td.Distribution.arg_constraints()
-
-    @property
-    def mean(self):
-        return self.base_distribution.mean.view(self.new_shape)
-
-    @property
-    def variance(self):
-        return self.base_distribution.variance.view(self.new_shape)
-
-    def rsample(self, sample_shape=torch.Size()):
-        return self.base_distribution.rsample(sample_shape).view(sample_shape + self.new_shape)
-
-    def log_prob(self, value):
-        return self.base_distribution.log_prob(value.view(self.batch_shape + (-1,)))
-
-    def entropy(self):
-        return self.base_distribution.entropy()
 ############################################################################################
 
 class Temperature_Scaling(nn.Module):
@@ -188,16 +152,9 @@ class Stochastic_Spatial_Scaling(nn.Module):
         self.num_classes = num_class
         self.epsilon = 1e-5
         self.diagonal = False  # whether to use only the diagonal (independent normals)
-#        self.mean_l = conv_fn(num_class, num_class, kernel_size=(1, ) * 2)
-#        self.log_cov_diag_l = conv_fn(num_class, num_class, kernel_size=(1, ) * 2)
-#        self.cov_factor_l = conv_fn(num_class, num_class * 10, kernel_size=(1, ) * 2)
         self.conv_logits = conv_fn(num_class, num_class, kernel_size=(1, ) * 2)
 
     def weights_init(self):
-#        initialization(self.mean_l)
-#        initialization(self.log_cov_diag_l)
-#        initialization(self.cov_factor_l)       
-        
         initialization(self.conv_logits)
         
     def fixed_re_parametrization_trick(dist, num_samples):
@@ -208,9 +165,7 @@ class Stochastic_Spatial_Scaling(nn.Module):
         return torch.cat([samples, -samples]) + mean
                 
     def forward(self, logits):
-#        logits = F.relu(super().forward(image, **kwargs)[0])
-#        logits = logits.permute(0,2,3,1)
-#        print(logits.shape)
+
         batch_size = logits.shape[0]
         event_shape = (self.num_classes,) + logits.shape[2:]
 
@@ -218,55 +173,11 @@ class Stochastic_Spatial_Scaling(nn.Module):
         mean = self.conv_logits(logits)
         cov_diag = (mean*1e-5).exp() + self.epsilon
         mean = mean.view((batch_size, -1))
-        cov_diag = cov_diag.view((batch_size, -1))        
-
-
-#        mean = self.mean_l(logits)
-#        cov_diag = self.log_cov_diag_l(logits).exp() + self.epsilon
-#        mean = mean.view((batch_size, -1))
-#        cov_diag = cov_diag.view((batch_size, -1))
-        
-
-#        cov_factor = self.cov_factor_l(logits)
-#        cov_factor = cov_factor.view((batch_size, self.rank, self.num_classes, -1))
-#        cov_factor = cov_factor.flatten(2, 3)
-#        cov_factor = cov_factor.transpose(1, 2)
-#
-#        # covariance in the background tens to blow up to infinity, hence set to 0 outside the ROI
-##        mask = kwargs['sampling_mask']
-##        mask = mask.unsqueeze(1).expand((batch_size, self.num_classes) + mask.shape[1:]).reshape(batch_size, -1)
-##        cov_factor = cov_factor * mask.unsqueeze(-1)
-##        cov_diag = cov_diag * mask + self.epsilon
-#        
-#        cov_factor = cov_factor 
-#        cov_diag = cov_diag + self.epsilon
-#
-#        if self.diagonal:
-#            base_distribution = td.Independent(td.Normal(loc=mean, scale=torch.sqrt(cov_diag)), 1)
-#        else:
-#            try:
-#                base_distribution = td.LowRankMultivariateNormal(loc=mean, cov_factor=cov_factor, cov_diag=cov_diag)
-#            except:
-#                print('Covariance became not invertible using independent normals for this batch!')
-#                base_distribution = td.Independent(td.Normal(loc=mean, scale=torch.sqrt(cov_diag)), 1)
-#                
+        cov_diag = cov_diag.view((batch_size, -1))                     
 
         base_distribution = td.Independent(td.Normal(loc=mean, scale=torch.sqrt(cov_diag)), 1)
         distribution = ReshapedDistribution(base_distribution, event_shape)
 
-#        shape = (batch_size,) + event_shape
-#        logit_mean = mean.view(shape)
-  
-        
-#        cov_diag_view = cov_diag.view(shape).detach()
-#        cov_factor_view = cov_factor.transpose(2, 1).view((batch_size, self.num_classes * self.rank) + event_shape[1:]).detach()
-
-#        output_dict = {'logit_mean': logit_mean.detach(),
-#                       'cov_diag': cov_diag_view,
-#                       'cov_factor': cov_factor_view,
-#                       'distribution': distribution}
-                       
-#        logit_sample = self.fixed_re_parametrization_trick(distribution.rsample(sample_shape=logit_mean.shape[1]), num_samples=10)
         num_samples=2
         samples = distribution.rsample((num_samples // 2,)).cpu()
         mean = distribution.mean.unsqueeze(0).cpu()
@@ -276,27 +187,6 @@ class Stochastic_Spatial_Scaling(nn.Module):
 
         return logit_mean
         
-#class Logistic_Scaling(nn.Module):
-#    def __init__(self):
-#        super(Logistic_Scaling, self).__init__()
-##        self.logistic_C = nn.Parameter(torch.ones(1, num_class, 1, 1))
-##        self.logistic_R = nn.Parameter(torch.ones(1, num_class, 1, 1))
-#        self.logistic_I = nn.Parameter(torch.ones(1, num_class, 1, 1))
-#        self.logistic_K = nn.Parameter(torch.ones(1, num_class, 1, 1))
-#
-#    def weights_init(self):
-##        pass
-##         self.logistic_C.data.fill_(0)
-##         self.logistic_R.data.fill_(1)
-#         self.logistic_I.data.fill_(0)
-#         self.logistic_K.data.fill_(1)
-#
-#    def forward(self, logits, args):
-##        return self.logistic_C.cuda(args.gpu) + self.logistic_R.cuda(args.gpu) / (1+ torch.exp(self.logistic_K.cuda(args.gpu) * (probs + self.logistic_I.cuda(args.gpu)) ))
-##        softmax = torch.nn.Softmax(dim=1)
-##        probs = softmax(logits)
-##        return 1/(1 + torch.exp(-self.logistic_K*logits + self.logistic_I))    
-#        return   torch.exp(self.logistic_K*logits + self.logistic_I) / torch.sum(torch.exp(self.logistic_K*logits + self.logistic_I), dim=1, keepdim=True)
 
 class Dirichlet_Scaling(nn.Module):
     def __init__(self):
@@ -306,23 +196,15 @@ class Dirichlet_Scaling(nn.Module):
     def weights_init(self):
         self.dirichlet_linear.weight.data.copy_(torch.eye(self.dirichlet_linear.weight.shape[0]))
         self.dirichlet_linear.bias.data.copy_(torch.zeros(*self.dirichlet_linear.bias.shape))
-#        pass
-    def forward(self, logits):
-    
-#        logits = logits.permute(0,2,3,1).view(-1, num_class)
-#        gt = gt.view(-1)
 
+    def forward(self, logits):
         logits = logits.permute(0,2,3,1)
-#        gt = gt.view(-1)
-        
         softmax = torch.nn.Softmax(dim=-1)
         probs = softmax(logits)
         ln_probs = torch.log(probs+1e-10)
-#        print(ln_probs.shape)
 
         return self.dirichlet_linear(ln_probs).permute(0,3,1,2)   
-#        return self.dirichlet_linear(ln_probs), gt
-#        return self.dirichlet_linear(ln_probs)
+
         
         
 class Meta_Scaling(nn.Module):
@@ -330,10 +212,8 @@ class Meta_Scaling(nn.Module):
         super(Meta_Scaling, self).__init__()
         self.temperature_single = nn.Parameter(torch.ones(1))
         self.alpha = 0.05
-#        self.threshold_linear = nn.Linear(1000, 1)
 
     def weights_init(self):
-#        self.threshold_linear.weight.data.copy_(torch.zeros(self.threshold_linear.weight.shape))
         self.temperature_single.data.fill_(1)
         
     def forward(self, logits, gt, threshold):
@@ -374,79 +254,14 @@ class Meta_Scaling(nn.Module):
             inference_logits, inference_gt = x2[~cond_ind], y2[~cond_ind]
         
             temperature = self.temperature_single.expand(scaled_logits.size())
-#            print(self.temperature_single)
             scaled_logits = scaled_logits / temperature
-            
-#            p = torch.tensor(1/num_class, dtype=torch.float).cuda()           
-#            inference_logits = torch.log(p)*torch.ones_like(inference_logits)
 
             inference_logits = torch.ones_like(inference_logits)
-#            inference_logits = inference_logits/100
             
             cal_logits = torch.cat((scaled_logits, inference_logits), 0)
             cal_gt = torch.cat((scaled_gt, inference_gt), 0)
 
-
-#        loss = nn.CrossEntropyLoss(ignore_index=255)(cal_logits, cal_gt)
-#        return loss
-
         return cal_logits, cal_gt
-
-
-class IBTS_CamVid_With_Image(nn.Module):
-    def __init__(self):
-        super(IBTS_CamVid_With_Image, self).__init__()
-        self.temperature_level_2_conv1 = nn.Conv2d(num_class, 1, kernel_size=5, stride=1, padding=4, padding_mode='reflect', dilation=2, bias=True)
-        self.temperature_level_2_conv2 = nn.Conv2d(num_class, 1, kernel_size=5, stride=1, padding=4, padding_mode='reflect', dilation=2, bias=True)
-        self.temperature_level_2_conv3 = nn.Conv2d(num_class, 1, kernel_size=5, stride=1, padding=4, padding_mode='reflect', dilation=2, bias=True)
-        self.temperature_level_2_conv4 = nn.Conv2d(num_class, 1, kernel_size=5, stride=1, padding=4, padding_mode='reflect', dilation=2, bias=True)
-        self.temperature_level_2_param1 = nn.Conv2d(num_class, 1, kernel_size=5, stride=1, padding=4, padding_mode='reflect', dilation=2, bias=True)
-        self.temperature_level_2_param2 = nn.Conv2d(num_class, 1, kernel_size=5, stride=1, padding=4, padding_mode='reflect', dilation=2, bias=True)
-        self.temperature_level_2_param3 = nn.Conv2d(num_class, 1, kernel_size=5, stride=1, padding=4, padding_mode='reflect', dilation=2, bias=True)
-        self.temperature_level_2_conv_img = nn.Conv2d(3, 1, kernel_size=5, stride=1, padding=4, padding_mode='reflect', dilation=2, bias=True)
-        self.temperature_level_2_param_img = nn.Conv2d(num_class, 1, kernel_size=5, stride=1, padding=4, padding_mode='reflect', dilation=2, bias=True)
-
-    def weights_init(self):
-        torch.nn.init.zeros_(self.temperature_level_2_conv1.weight.data)
-        torch.nn.init.zeros_(self.temperature_level_2_conv1.bias.data)
-        torch.nn.init.zeros_(self.temperature_level_2_conv2.weight.data)
-        torch.nn.init.zeros_(self.temperature_level_2_conv2.bias.data)
-        torch.nn.init.zeros_(self.temperature_level_2_conv3.weight.data)
-        torch.nn.init.zeros_(self.temperature_level_2_conv3.bias.data)
-        torch.nn.init.zeros_(self.temperature_level_2_conv4.weight.data)
-        torch.nn.init.zeros_(self.temperature_level_2_conv4.bias.data)
-        torch.nn.init.zeros_(self.temperature_level_2_param1.weight.data)
-        torch.nn.init.zeros_(self.temperature_level_2_param1.bias.data)
-        torch.nn.init.zeros_(self.temperature_level_2_param2.weight.data)
-        torch.nn.init.zeros_(self.temperature_level_2_param2.bias.data)
-        torch.nn.init.zeros_(self.temperature_level_2_param3.weight.data)
-        torch.nn.init.zeros_(self.temperature_level_2_param3.bias.data)
-        torch.nn.init.zeros_(self.temperature_level_2_conv_img.weight.data)
-        torch.nn.init.zeros_(self.temperature_level_2_conv_img.bias.data)
-        torch.nn.init.zeros_(self.temperature_level_2_param_img.weight.data)
-        torch.nn.init.zeros_(self.temperature_level_2_param_img.bias.data)
-
-    def forward(self, logits, image, args):
-        temperature_1 = self.temperature_level_2_conv1(logits)
-        temperature_1 += (torch.ones(1)).cuda(args.gpu)
-        temperature_2 = self.temperature_level_2_conv2(logits)
-        temperature_2 += (torch.ones(1)).cuda(args.gpu)
-        temperature_3 = self.temperature_level_2_conv3(logits)
-        temperature_3 += (torch.ones(1)).cuda(args.gpu)
-        temperature_4 = self.temperature_level_2_conv4(logits)
-        temperature_4 += (torch.ones(1)).cuda(args.gpu)
-        temperature_param_1 = self.temperature_level_2_param1(logits)
-        temperature_param_2 = self.temperature_level_2_param2(logits)
-        temperature_param_3 = self.temperature_level_2_param3(logits)
-        temp_level_11 = temperature_1 * torch.sigmoid(temperature_param_1) + temperature_2 * (1.0 - torch.sigmoid(temperature_param_1))
-        temp_level_num_class = temperature_3 * torch.sigmoid(temperature_param_2) + temperature_4 * (1.0 - torch.sigmoid(temperature_param_2))
-        temp_1 = temp_level_11 * torch.sigmoid(temperature_param_3) + temp_level_num_class * (1.0 - torch.sigmoid(temperature_param_3))
-        temp_2 = self.temperature_level_2_conv_img(image) + (torch.ones(1)).cuda(args.gpu)
-        temp_param = self.temperature_level_2_param_img(logits)
-        temperature = temp_1 * torch.sigmoid(temp_param) + temp_2 * (1.0 - torch.sigmoid(temp_param))
-        sigma = 1e-8
-        temperature = F.relu(torch.mean(temperature) + torch.ones(1).cuda(args.gpu)) + sigma
-        return logits / temperature
 
 class LTS_CamVid_With_Image(nn.Module):
     def __init__(self):
@@ -481,25 +296,6 @@ class LTS_CamVid_With_Image(nn.Module):
         torch.nn.init.zeros_(self.temperature_level_2_param_img.weight.data)
         torch.nn.init.zeros_(self.temperature_level_2_param_img.bias.data)
 
-#        torch.nn.init.constant_(self.temperature_level_2_conv1.weight.data, 0.001)
-#        torch.nn.init.constant_(self.temperature_level_2_conv1.bias.data, 0.001)
-#        torch.nn.init.constant_(self.temperature_level_2_conv2.weight.data, 0.001)
-#        torch.nn.init.constant_(self.temperature_level_2_conv2.bias.data, 0.001)
-#        torch.nn.init.constant_(self.temperature_level_2_conv3.weight.data, 0.001)
-#        torch.nn.init.constant_(self.temperature_level_2_conv3.bias.data, 0.001)
-#        torch.nn.init.constant_(self.temperature_level_2_conv4.weight.data, 0.001)
-#        torch.nn.init.constant_(self.temperature_level_2_conv4.bias.data, 0.001)
-#        torch.nn.init.zeros_(self.temperature_level_2_param1.weight.data)
-#        torch.nn.init.zeros_(self.temperature_level_2_param1.bias.data)
-#        torch.nn.init.zeros_(self.temperature_level_2_param2.weight.data)
-#        torch.nn.init.zeros_(self.temperature_level_2_param2.bias.data)
-#        torch.nn.init.zeros_(self.temperature_level_2_param3.weight.data)
-#        torch.nn.init.zeros_(self.temperature_level_2_param3.bias.data)
-#        torch.nn.init.zeros_(self.temperature_level_2_conv_img.weight.data)
-#        torch.nn.init.zeros_(self.temperature_level_2_conv_img.bias.data)
-#        torch.nn.init.zeros_(self.temperature_level_2_param_img.weight.data)
-#        torch.nn.init.zeros_(self.temperature_level_2_param_img.bias.data)
-
 
     def forward(self, logits, image):
         temperature_1 = self.temperature_level_2_conv1(logits)
@@ -526,7 +322,6 @@ class LTS_CamVid_With_Image(nn.Module):
 
 
 
-################
 class Binary_Classifier(nn.Module):
     def __init__(self):
         super(Binary_Classifier, self).__init__()
@@ -541,39 +336,17 @@ class Binary_Classifier(nn.Module):
 
         self.relu = nn.ReLU()        
 
-#        self.linear_3 = nn.Linear(num_class*2, num_class*2)
-#        self.bn3 = nn.BatchNorm2d(num_class*2)
-#        self.linear_4 = nn.Linear(num_class*2, num_class)
-#        self.bn4 = nn.BatchNorm2d(num_class)
-
-#        
-#        self.dirichlet_linear = nn.Linear(num_class, num_class*2)
-#        self.binary_linear = nn.Linear(num_class*2, 2)
 
     def weights_init(self):
         self.dirichlet_linear.weight.data.copy_(torch.eye(self.dirichlet_linear.weight.shape[0]))
         self.dirichlet_linear.bias.data.copy_(torch.zeros(*self.dirichlet_linear.bias.shape))
- #       self.binary_linear.weight.data.fill_(1)
- #       self.binary_linear.bias.data.zero_()
         pass
     def forward(self, logits, gt):
-    
-#        logits = logits.permute(0,2,3,1).view(-1, num_class)
-#        gt = gt.view(-1)
-
-        logits = logits.permute(0,2,3,1)
-#        gt = gt.view(-1)
-        
+        logits = logits.permute(0,2,3,1)   
         softmax = torch.nn.Softmax(dim=-1)
         probs = softmax(logits)
 
-#        probs = logits
         ln_probs = torch.log(probs+1e-16)
-
-
-#        out = logits
-##        print(ln_probs.shape)
-#        tf_positive = self.binary_linear(self.dirichlet_linear(ln_probs))
 
 
         out = self.dirichlet_linear(ln_probs)
@@ -587,46 +360,13 @@ class Binary_Classifier(nn.Module):
         out = self.linear_2(out.permute(0,2,3,1))
         out = self.bn2(out.permute(0,3,1,2))
         out = self.relu(out)       
-
-#        out = self.linear_3(out.permute(0,2,3,1))
-#        out = self.bn3(out.permute(0,3,1,2))
-#        out = self.relu(out)  
-#        
-#        out = self.linear_4(out.permute(0,2,3,1))
-#        out = self.bn4(out.permute(0,3,1,2))
-#        out = self.relu(out)          
-#        
+     
         
         tf_positive = self.binary_linear(out.permute(0,2,3,1))
-        
         _, pred = torch.max(probs, dim=-1)
         
         mask = pred == gt
         
         return  tf_positive.permute(0,3,1,2), mask.long()
-###############################################################
         
         
-class Dirichlet_Mask_Model(nn.Module):
-    def __init__(self):
-        super(Dirichlet_Mask_Model, self).__init__()
-        self.dirichlet_linear = nn.Linear(num_class, num_class)
-
-    def weights_init(self):
-        self.dirichlet_linear.weight.data.copy_(torch.eye(self.dirichlet_linear.weight.shape[0]))
-        self.dirichlet_linear.bias.data.copy_(torch.zeros(*self.dirichlet_linear.bias.shape))
-#        pass
-    def forward(self, logits):
-    
-#        logits = logits.permute(0,2,3,1).view(-1, num_class)
-#        gt = gt.view(-1)
-
-        logits = logits.permute(0,2,3,1)
-#        gt = gt.view(-1)
-        
-        softmax = torch.nn.Softmax(dim=-1)
-        probs = softmax(logits)
-        ln_probs = torch.log(probs+1e-10)
-#        print(ln_probs.shape)
-
-        return self.dirichlet_linear(ln_probs).permute(0,3,1,2)    
