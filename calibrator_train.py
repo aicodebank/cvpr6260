@@ -169,7 +169,6 @@ if __name__ == "__main__":
         calibration_model = nn.DataParallel(calibration_model)
 
     optimizer = optim.AdamW(calibration_model.parameters(), lr=lr, weight_decay=1e-6)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
     
     start_epoch = 0
     if args.resume:
@@ -233,8 +232,6 @@ if __name__ == "__main__":
                       
             loss.backward()
             optimizer.step()
-
-        scheduler.step()
             
 ################################################################################################################
 
